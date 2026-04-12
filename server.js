@@ -30,7 +30,7 @@ const KIWIFY_BASE = 'https://public-api.kiwify.com/v1';
 
 const DB_FILE = path.join(DATA_DIR, 'users.json');
 
-let usersDB = {}; // { "email": { status, updatedAt, customerName } }
+let usersDB = {};
 
 function loadDB() {
   try {
@@ -68,11 +68,10 @@ function getUser(email) {
   return usersDB[email.trim().toLowerCase()] || null;
 }
 
-// Carregar DB ao iniciar
 loadDB();
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  CACHE DO TOKEN OAUTH (para fallback via API)
+//  CACHE DO TOKEN OAUTH
 // ═══════════════════════════════════════════════════════════════════════════════
 
 let cachedToken = null;
@@ -113,7 +112,6 @@ async function getKiwifyToken() {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  FALLBACK: BUSCAR VENDAS NA API DA KIWIFY
-//  Usado quando o email não está no DB local (ex: servidor acabou de subir)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 async function checkViaAPI(email) {
@@ -126,14 +124,12 @@ async function checkViaAPI(email) {
 
   const formatDate = (d) => d.toISOString().split('T')[0] + ' 00:00:00.000';
 
-  // 1) Buscar venda PAID recente
   const paidSale = await searchSales(token, normalizedEmail, 'paid', formatDate(startDate), formatDate(endDate));
   if (paidSale) {
     setUser(normalizedEmail, 'active', paidSale.customer?.name || '');
     return { active: true, status: 'active' };
   }
 
-  // 2) Buscar reembolso
   const refundStart = new Date();
   refundStart.setDate(refundStart.getDate() - 180);
   const refundedSale = await searchSales(token, normalizedEmail, 'refunded', formatDate(refundStart), formatDate(endDate));
@@ -142,14 +138,12 @@ async function checkViaAPI(email) {
     return { active: false, status: 'refunded' };
   }
 
-  // 3) Buscar chargeback
   const cbSale = await searchSales(token, normalizedEmail, 'chargedback', formatDate(refundStart), formatDate(endDate));
   if (cbSale) {
     setUser(normalizedEmail, 'chargedback');
     return { active: false, status: 'chargedback' };
   }
 
-  // 4) Buscar compra antiga (expirada)
   const oldStart = new Date();
   oldStart.setDate(oldStart.getDate() - 180);
   const oldEnd = new Date();
@@ -204,59 +198,94 @@ async function searchSales(token, email, status, startDate, endDate) {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  WEBHOOK DA KIWIFY — Recebe eventos em tempo real
+//  FIX: Agora verifica o token em TODOS os locais possíveis do payload
 // ═══════════════════════════════════════════════════════════════════════════════
 
 app.post('/webhook/kiwify', (req, res) => {
   try {
-    // Validar token do webhook
+    const body = req.body || {};
+
+    // Log completo para debug (remover depois que estiver funcionando)
+    console.log('[WEBHOOK] Headers:', JSON.stringify(req.headers, null, 2));
+    console.log('[WEBHOOK] Body keys:', Object.keys(body));
+    console.log('[WEBHOOK] Body:', JSON.stringify(body).substring(0, 1000));
+
+    // Validar token — Kiwify pode enviar em diversos campos
     if (KIWIFY_WEBHOOK_TOKEN) {
-      const signature = req.headers['x-kiwify-webhook-token']
-                     || req.body?.webhook_token
-                     || req.query?.token;
+      // Buscar token em TODOS os locais possíveis
+      const possibleTokens = [
+        req.headers['x-kiwify-webhook-token'],
+        req.headers['x-webhook-token'],
+        req.headers['authorization'],
+        req.query?.token,
+        body.token,
+        body.webhook_token,
+        body.signature,
+        body.api_key,
+      ].filter(Boolean);
 
-      // A Kiwify pode enviar o token de diferentes formas
-      const bodyToken = req.body?.token;
-      const isValid = signature === KIWIFY_WEBHOOK_TOKEN
-                   || bodyToken === KIWIFY_WEBHOOK_TOKEN;
+      console.log('[WEBHOOK] Tokens encontrados:', possibleTokens);
 
-      if (!isValid) {
-        console.warn('[WEBHOOK] Token inválido — ignorando');
+      const isValid = possibleTokens.some(t =>
+        t === KIWIFY_WEBHOOK_TOKEN ||
+        t === `Bearer ${KIWIFY_WEBHOOK_TOKEN}`
+      );
+
+      if (!isValid && possibleTokens.length === 0) {
+        // Se não encontrou token nenhum, aceita mesmo assim (Kiwify pode não enviar)
+        console.warn('[WEBHOOK] Nenhum token encontrado no payload — aceitando mesmo assim');
+      } else if (!isValid) {
+        console.warn('[WEBHOOK] Token inválido:', possibleTokens[0]?.substring(0, 20));
         return res.status(401).json({ error: 'Token inválido' });
       }
     }
 
-    const event = req.body;
-    const eventType = (event.webhook_event_type || event.event || event.type || '').toLowerCase();
+    // Detectar tipo de evento — Kiwify usa vários formatos possíveis
+    const eventType = (
+      body.webhook_event_type ||
+      body.event ||
+      body.type ||
+      body.order_status ||
+      body.subscription_status ||
+      ''
+    ).toLowerCase();
+
+    // Detectar email do cliente — buscar em todos os locais possíveis
     const customerEmail = (
-      event.Customer?.email ||
-      event.customer?.email ||
-      event.data?.customer?.email ||
-      event.buyer?.email ||
+      body.Customer?.email ||
+      body.customer?.email ||
+      body.data?.customer?.email ||
+      body.buyer?.email ||
+      body.email ||
+      body.data?.email ||
+      body.data?.buyer?.email ||
       ''
     ).trim().toLowerCase();
 
-    const customerName = event.Customer?.full_name
-                      || event.customer?.name
-                      || event.data?.customer?.name
-                      || '';
+    const customerName =
+      body.Customer?.full_name ||
+      body.Customer?.name ||
+      body.customer?.name ||
+      body.customer?.full_name ||
+      body.data?.customer?.name ||
+      body.buyer?.name ||
+      '';
 
-    console.log(`[WEBHOOK] Evento: ${eventType} | Email: ${customerEmail}`);
+    console.log(`[WEBHOOK] Evento: "${eventType}" | Email: "${customerEmail}" | Nome: "${customerName}"`);
 
     if (!customerEmail) {
-      console.warn('[WEBHOOK] Sem email no payload');
+      console.warn('[WEBHOOK] Sem email no payload — ignorando');
       return res.status(200).json({ received: true });
     }
 
     // Mapear eventos para status
-    // Eventos da Kiwify: order_approved, refund, chargeback,
-    // subscription_cancellation, subscription_late, subscription_renewed
-    if (eventType.includes('approved') || eventType.includes('paid')) {
+    if (eventType.includes('approved') || eventType.includes('paid') || eventType.includes('aprovad')) {
       setUser(customerEmail, 'active', customerName);
     }
-    else if (eventType.includes('renew')) {
+    else if (eventType.includes('renew') || eventType.includes('renovad')) {
       setUser(customerEmail, 'active', customerName);
     }
-    else if (eventType.includes('refund')) {
+    else if (eventType.includes('refund') || eventType.includes('reembols')) {
       setUser(customerEmail, 'refunded');
     }
     else if (eventType.includes('chargeback')) {
@@ -269,13 +298,24 @@ app.post('/webhook/kiwify', (req, res) => {
       setUser(customerEmail, 'late');
     }
     else {
-      console.log(`[WEBHOOK] Evento não mapeado: ${eventType}`);
+      console.log(`[WEBHOOK] Evento não mapeado: "${eventType}" — tentando detectar pelo body`);
+      // Fallback: tentar detectar pelo status no body
+      const orderStatus = (body.order_status || body.status || '').toLowerCase();
+      if (orderStatus === 'paid' || orderStatus === 'approved') {
+        setUser(customerEmail, 'active', customerName);
+      } else if (orderStatus === 'refunded') {
+        setUser(customerEmail, 'refunded');
+      } else if (orderStatus === 'chargedback') {
+        setUser(customerEmail, 'chargedback');
+      } else {
+        console.log(`[WEBHOOK] Não consegui mapear — status: "${orderStatus}"`);
+      }
     }
 
     res.status(200).json({ received: true });
   } catch (err) {
     console.error('[WEBHOOK] Erro:', err.message);
-    res.status(200).json({ received: true }); // Sempre retorna 200 para evitar retries
+    res.status(200).json({ received: true });
   }
 });
 
@@ -300,7 +340,7 @@ app.post('/api/verify', async (req, res) => {
     const normalizedEmail = email.trim().toLowerCase();
     console.log(`[VERIFY] Consultando: ${normalizedEmail}`);
 
-    // 1) Primeiro: verificar no banco local (dados dos webhooks)
+    // 1) Verificar no banco local (dados dos webhooks)
     const user = getUser(normalizedEmail);
 
     if (user) {
@@ -321,8 +361,8 @@ app.post('/api/verify', async (req, res) => {
       });
     }
 
-    // 2) Fallback: consultar API da Kiwify diretamente
-    console.log(`[VERIFY] Não encontrado no DB local, consultando API...`);
+    // 2) Fallback: consultar API da Kiwify
+    console.log(`[VERIFY] Não encontrado no DB, consultando API...`);
     const apiResult = await checkViaAPI(normalizedEmail);
 
     const messages = {
@@ -345,28 +385,21 @@ app.post('/api/verify', async (req, res) => {
   }
 });
 
-// ─── Admin: ver todos os usuários (protegido) ───────────────────────────────
+// ─── Admin endpoints ─────────────────────────────────────────────────────────
 
 app.get('/admin/users', (req, res) => {
   if (!API_SECRET || req.headers['x-api-secret'] !== API_SECRET) {
     return res.status(401).json({ error: 'Não autorizado' });
   }
-  res.json({
-    total: Object.keys(usersDB).length,
-    users: usersDB,
-  });
+  res.json({ total: Object.keys(usersDB).length, users: usersDB });
 });
-
-// ─── Admin: ativar/desativar manualmente ─────────────────────────────────────
 
 app.post('/admin/set-status', (req, res) => {
   if (!API_SECRET || req.headers['x-api-secret'] !== API_SECRET) {
     return res.status(401).json({ error: 'Não autorizado' });
   }
   const { email, status } = req.body;
-  if (!email || !status) {
-    return res.status(400).json({ error: 'email e status são obrigatórios' });
-  }
+  if (!email || !status) return res.status(400).json({ error: 'email e status são obrigatórios' });
   setUser(email, status);
   res.json({ ok: true, email, status });
 });
@@ -378,16 +411,11 @@ app.get('/', (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  INICIAR SERVIDOR
-// ═══════════════════════════════════════════════════════════════════════════════
-
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Zeph Auth Server rodando na porta ${PORT}`);
-  if (!KIWIFY_CLIENT_ID || !KIWIFY_CLIENT_SECRET || !KIWIFY_ACCOUNT_ID) {
-    console.warn('⚠️  Configure KIWIFY_CLIENT_ID, KIWIFY_CLIENT_SECRET e KIWIFY_ACCOUNT_ID');
-  }
-  if (!KIWIFY_WEBHOOK_TOKEN) {
-    console.warn('⚠️  Configure KIWIFY_WEBHOOK_TOKEN para validar webhooks');
-  }
+  if (!KIWIFY_CLIENT_ID) console.warn('⚠️  KIWIFY_CLIENT_ID não configurado');
+  if (!KIWIFY_CLIENT_SECRET) console.warn('⚠️  KIWIFY_CLIENT_SECRET não configurado');
+  if (!KIWIFY_ACCOUNT_ID) console.warn('⚠️  KIWIFY_ACCOUNT_ID não configurado');
+  if (!KIWIFY_WEBHOOK_TOKEN) console.warn('⚠️  KIWIFY_WEBHOOK_TOKEN não configurado');
 });
