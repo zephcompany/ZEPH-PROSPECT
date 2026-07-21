@@ -84,21 +84,131 @@ function isUserActive(user) {
 
 loadDB();
 
-// ─── MIGRAÇÃO: adicionar expiresAt nos usuários antigos ─────────────────────
-// Roda uma vez na inicialização. Usuários ativos sem expiresAt ganham 30 dias
-// a partir de AGORA (não da data de compra original).
-(function migrateOldUsers() {
+// ─── MIGRAÇÃO: corrigir expiresAt com base nas datas reais de compra ────────
+// Roda uma vez. Sobrescreve usuários antigos com os dados corretos do CSV.
+(function migrateFromCSV() {
+  const csvData = {
+    "rafaleitesantos@hotmail.com": { s: "active", e: "2026-08-20T12:33:35.000Z" },
+    "ds6877354@gmail.com": { s: "active", e: "2026-07-25T13:48:58.000Z" },
+    "douglas1210sousa@gmail.com": { s: "expired", e: "2026-07-06T03:35:33.000Z" },
+    "resendeclaraana@gmail.com": { s: "refunded", e: null },
+    "elizabethmelo1507@gmail.com": { s: "refunded", e: null },
+    "eduardolima999@gmail.com": { s: "expired", e: "2026-06-30T12:41:12.000Z" },
+    "jonathanalvesdesigner@gmail.com": { s: "expired", e: "2026-06-28T21:38:10.000Z" },
+    "williamwalking@hotmail.com": { s: "refunded", e: null },
+    "dalexandrial@gmail.com": { s: "expired", e: "2026-06-26T12:14:42.000Z" },
+    "contato.eltonmiranda@gmail.com": { s: "expired", e: "2026-06-25T21:14:38.000Z" },
+    "victor50@outlook.pt": { s: "expired", e: "2026-06-24T14:52:25.000Z" },
+    "winderfilho.designer@gmail.com": { s: "expired", e: "2026-06-24T10:43:58.000Z" },
+    "lucasediitor.marte@gmail.com": { s: "refunded", e: null },
+    "edelvan730@gmail.com": { s: "refunded", e: null },
+    "cursoprodutor@gmail.com": { s: "expired", e: "2026-06-20T19:56:20.000Z" },
+    "lrobcost@gmail.com": { s: "expired", e: "2026-06-20T16:46:15.000Z" },
+    "gustavluiz2005@gmail.com": { s: "expired", e: "2026-06-20T16:01:29.000Z" },
+    "adantasjunior2026@hotmail.com": { s: "expired", e: "2026-06-19T17:09:21.000Z" },
+    "arthur.moreirawd@gmail.com": { s: "expired", e: "2026-06-19T14:01:51.000Z" },
+    "noliv23@gmail.com": { s: "expired", e: "2026-06-18T16:25:20.000Z" },
+    "safetyvolt12@gmail.com": { s: "expired", e: "2026-06-18T14:49:32.000Z" },
+    "mattheus328@gmail.com": { s: "expired", e: "2026-06-17T23:54:47.000Z" },
+    "brunoemonynha@gmail.com": { s: "expired", e: "2026-06-16T15:54:59.000Z" },
+    "nadjabreno8@gmail.com": { s: "expired", e: "2026-06-14T09:06:27.000Z" },
+    "edsonaraujoodesign76@gmail.com": { s: "expired", e: "2026-06-14T08:01:28.000Z" },
+    "henriquethesola@gmail.com": { s: "expired", e: "2026-06-12T14:13:02.000Z" },
+    "simaomendesgui@yahoo.com.br": { s: "expired", e: "2026-06-10T23:34:10.000Z" },
+    "richardrico550@gmail.com": { s: "expired", e: "2026-06-10T12:23:12.000Z" },
+    "joaopaixao1020@gmail.com": { s: "refunded", e: null },
+    "designfromvinny@gmail.com": { s: "refunded", e: null },
+    "edcleissonsantos22@hotmail.com": { s: "expired", e: "2026-06-10T07:19:18.000Z" },
+    "diogodbs.55db@gmail.com": { s: "expired", e: "2026-06-09T19:44:09.000Z" },
+    "vgalvesdias@gmail.com": { s: "expired", e: "2026-06-07T15:28:43.000Z" },
+    "a33n33pn@gmail.com": { s: "expired", e: "2026-06-07T10:35:45.000Z" },
+    "qrg.hanna@gmail.com": { s: "expired", e: "2026-06-06T15:59:20.000Z" },
+    "bruunaavc@gmail.com": { s: "refunded", e: null },
+    "kleberaa1012@gmail.com": { s: "expired", e: "2026-05-31T22:42:01.000Z" },
+    "brann.duartedsgn@gmail.com": { s: "expired", e: "2026-05-31T14:37:11.000Z" },
+    "felipedsgnui@gmail.com": { s: "expired", e: "2026-05-31T12:09:40.000Z" },
+    "joaomtf.matta@gmail.com": { s: "expired", e: "2026-05-30T20:05:30.000Z" },
+    "airupagencia@gmail.com": { s: "expired", e: "2026-05-28T22:55:09.000Z" },
+    "karineluizewd@gmail.com": { s: "expired", e: "2026-05-27T14:20:22.000Z" },
+    "contatokauanalvess@gmail.com": { s: "expired", e: "2026-05-26T14:02:17.000Z" },
+    "thimalaquias@hotmail.com": { s: "expired", e: "2026-05-25T06:11:51.000Z" },
+    "denisedcmello@gmail.com": { s: "expired", e: "2026-05-24T16:34:12.000Z" },
+    "jorgetwent4@gmail.com": { s: "expired", e: "2026-05-24T16:06:00.000Z" },
+    "sarahmachado42@gmail.com": { s: "refunded", e: null },
+    "vcjoel10@gmail.com": { s: "expired", e: "2026-05-22T19:06:53.000Z" },
+    "grsolucoesweb@gmail.com": { s: "refunded", e: null },
+    "pedrozzuin@gmail.com": { s: "expired", e: "2026-05-22T11:52:03.000Z" },
+    "charopazhyann@gmail.com": { s: "expired", e: "2026-05-21T19:09:37.000Z" },
+    "kiwifygabigol@gmail.com": { s: "refunded", e: null },
+    "brunoebrunomarketing@gmail.com": { s: "refunded", e: null },
+    "carlosnatanielk@gmail.com": { s: "expired", e: "2026-05-20T21:05:40.000Z" },
+    "lucasmotion0@gmail.com": { s: "expired", e: "2026-05-20T14:29:02.000Z" },
+    "angela-leitte@hotmail.com": { s: "expired", e: "2026-05-19T20:41:07.000Z" },
+    "ks4445218@gmail.com": { s: "expired", e: "2026-05-19T07:03:52.000Z" },
+    "arq.allanp@gmail.com": { s: "refunded", e: null },
+    "nunestrokes@gmail.com": { s: "expired", e: "2026-05-16T15:49:15.000Z" },
+    "pedrosantiaggo7@hotmail.com": { s: "expired", e: "2026-05-14T20:03:40.000Z" },
+    "danielbarcelosdesign@gmail.com": { s: "expired", e: "2026-05-14T16:44:57.000Z" },
+    "viniciusghedim@gmail.com": { s: "refunded", e: null },
+    "contato.eduardokeith@gmail.com": { s: "refunded", e: null },
+    "victor2006gr@gmail.com": { s: "expired", e: "2026-05-13T23:07:08.000Z" },
+    "marcao.docriativo@gmail.com": { s: "expired", e: "2026-05-13T22:12:58.000Z" },
+    "projects@veen.studio": { s: "expired", e: "2026-05-13T10:40:35.000Z" },
+    "zaltcompanydigital@gmail.com": { s: "expired", e: "2026-05-13T07:17:53.000Z" },
+    "xpdroid100@gmail.com": { s: "expired", e: "2026-05-13T06:21:50.000Z" },
+    "owilsondesigner@gmail.com": { s: "expired", e: "2026-05-12T23:08:58.000Z" },
+    "well@ldmedia.com.br": { s: "expired", e: "2026-05-12T22:57:37.000Z" },
+    "omatheusbarroso@gmail.com": { s: "expired", e: "2026-05-12T21:19:05.000Z" },
+    "jessicathaisdacosta@gmail.com": { s: "refunded", e: null },
+    "joserarison4321@gmail.com": { s: "expired", e: "2026-05-12T21:00:22.000Z" },
+    "pedrobuenocvlo@gmail.com": { s: "expired", e: "2026-05-12T20:54:09.000Z" },
+    "ynkdesigner@gmail.com": { s: "expired", e: "2026-05-12T20:50:57.000Z" },
+    "guidinilimajoaopedro3@gmail.com": { s: "refunded", e: null },
+    "caio.tsm@gmail.com": { s: "expired", e: "2026-05-12T18:21:08.000Z" },
+    "criandu.inc@gmail.com": { s: "refunded", e: null },
+    "augustoomsn@gmail.com": { s: "expired", e: "2026-05-12T16:12:32.000Z" },
+    "pierrefontenelemkt@gmail.com": { s: "expired", e: "2026-05-12T15:03:58.000Z" },
+    "grossetti@gmail.com": { s: "expired", e: "2026-05-12T14:54:06.000Z" },
+    "cauadesgn@gmail.com": { s: "expired", e: "2026-05-12T14:04:19.000Z" },
+    "contato@girardi.cc": { s: "expired", e: "2026-05-12T13:53:58.000Z" },
+    "roberto.rmp@hotmail.com": { s: "expired", e: "2026-05-12T13:30:48.000Z" },
+    "isacaureliano42@gmail.com": { s: "expired", e: "2026-05-12T13:13:23.000Z" },
+    "equadros057@gmail.com": { s: "expired", e: "2026-05-12T12:51:11.000Z" },
+    "luisfernandooficialbr@gmail.com": { s: "expired", e: "2026-05-12T12:46:11.000Z" },
+    "anasalcarol@gmail.com": { s: "expired", e: "2026-05-12T12:38:46.000Z" },
+    "matheusggffdickel1@gmail.com": { s: "refunded", e: null },
+    "contadaadobleartes2020@gmail.com": { s: "refunded", e: null },
+    "rafaelartes2020@gmail.com": { s: "refunded", e: null },
+  };
+
   let migrated = 0;
+  const now = new Date().toISOString();
+  for (const [email, data] of Object.entries(csvData)) {
+    const existing = usersDB[email];
+    // Só migra se o usuário existe no DB e não tem expiresAt, OU se o status mudou
+    if (existing && (!existing.expiresAt || existing.status !== data.s)) {
+      existing.status = data.s;
+      existing.expiresAt = data.e;
+      existing.updatedAt = now;
+      migrated++;
+    }
+    // Se não existe no DB mas está no CSV, adiciona
+    if (!existing) {
+      usersDB[email] = { status: data.s, customerName: '', updatedAt: now, expiresAt: data.e };
+      migrated++;
+    }
+  }
+  // Qualquer usuário ativo no DB que NÃO está no CSV e não tem expiresAt -> dar 30 dias
   for (const [email, user] of Object.entries(usersDB)) {
-    if (user.status === 'active' && !user.expiresAt) {
+    if (user.status === 'active' && !user.expiresAt && !csvData[email]) {
       user.expiresAt = makeExpiresAt();
-      user.updatedAt = new Date().toISOString();
+      user.updatedAt = now;
       migrated++;
     }
   }
   if (migrated > 0) {
     saveDB();
-    console.log(`[MIGRAÇÃO] ${migrated} usuarios antigos receberam expiracao de ${ACCESS_DAYS} dias`);
+    console.log(`[MIGRACAO] ${migrated} usuarios atualizados com datas corretas`);
   }
 })();
 
