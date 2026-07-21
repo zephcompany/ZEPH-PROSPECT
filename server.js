@@ -84,6 +84,24 @@ function isUserActive(user) {
 
 loadDB();
 
+// ─── MIGRAÇÃO: adicionar expiresAt nos usuários antigos ─────────────────────
+// Roda uma vez na inicialização. Usuários ativos sem expiresAt ganham 30 dias
+// a partir de AGORA (não da data de compra original).
+(function migrateOldUsers() {
+  let migrated = 0;
+  for (const [email, user] of Object.entries(usersDB)) {
+    if (user.status === 'active' && !user.expiresAt) {
+      user.expiresAt = makeExpiresAt();
+      user.updatedAt = new Date().toISOString();
+      migrated++;
+    }
+  }
+  if (migrated > 0) {
+    saveDB();
+    console.log(`[MIGRAÇÃO] ${migrated} usuarios antigos receberam expiracao de ${ACCESS_DAYS} dias`);
+  }
+})();
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  OAUTH TOKEN CACHE
 // ═══════════════════════════════════════════════════════════════════════════════
