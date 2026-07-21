@@ -1,6 +1,6 @@
 {
   "name": "zeph-kiwify-auth",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Backend de autenticação Zeph SDR IA via Kiwify (Webhooks + API)",
   "main": "server.js",
   "scripts": {
