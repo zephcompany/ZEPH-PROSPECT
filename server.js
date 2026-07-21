@@ -535,3 +535,4 @@ app.listen(PORT, () => {
   console.log(`Zeph Auth Server rodando na porta ${PORT}`);
   console.log(`Acesso expira em ${ACCESS_DAYS} dias apos compra/renovacao`);
 });
+ 
