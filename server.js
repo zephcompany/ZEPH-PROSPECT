@@ -269,7 +269,7 @@ async function checkViaAPI(email) {
   }
 
   const refundStart = new Date();
-  refundStart.setDate(refundStart.getDate() - 180);
+  refundStart.setDate(refundStart.getDate() - 85);
   const refundedSale = await searchSales(token, normalizedEmail, 'refunded', formatDate(refundStart), formatDate(endDate));
   if (refundedSale) {
     setUser(normalizedEmail, 'refunded', '', false);
@@ -283,7 +283,7 @@ async function checkViaAPI(email) {
   }
 
   const oldStart = new Date();
-  oldStart.setDate(oldStart.getDate() - 180);
+  oldStart.setDate(oldStart.getDate() - 85);
   const oldEnd = new Date();
   oldEnd.setDate(oldEnd.getDate() - ACCESS_DAYS - 5);
   if (oldEnd > oldStart) {
