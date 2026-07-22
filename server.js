@@ -179,6 +179,7 @@ loadDB();
     "matheusggffdickel1@gmail.com": { s: "refunded", e: null },
     "contadaadobleartes2020@gmail.com": { s: "refunded", e: null },
     "rafaelartes2020@gmail.com": { s: "refunded", e: null },
+    "rafaeldsgnincomum@gmail.com": { s: "active", e: "2099-12-31T23:59:59.000Z" },
   };
 
   let migrated = 0;
@@ -520,8 +521,23 @@ app.post('/admin/set-status', (req, res) => {
   if (!API_SECRET || req.headers['x-api-secret'] !== API_SECRET) {
     return res.status(401).json({ error: 'Nao autorizado' });
   }
-  const { email, status } = req.body;
+  const { email, status, lifetime } = req.body;
   if (!email || !status) return res.status(400).json({ error: 'email e status sao obrigatorios' });
+
+  if (lifetime && status === 'active') {
+    // Vitalicio: expira em 2099
+    const key = email.trim().toLowerCase();
+    usersDB[key] = {
+      status: 'active',
+      customerName: usersDB[key]?.customerName || '',
+      updatedAt: new Date().toISOString(),
+      expiresAt: '2099-12-31T23:59:59.000Z',
+    };
+    saveDB();
+    console.log(`[ADMIN] ${key} -> active (VITALICIO)`);
+    return res.json({ ok: true, email: key, status: 'active', lifetime: true });
+  }
+
   setUser(email, status, '', status === 'active');
   res.json({ ok: true, email, status });
 });
@@ -535,4 +551,3 @@ app.listen(PORT, () => {
   console.log(`Zeph Auth Server rodando na porta ${PORT}`);
   console.log(`Acesso expira em ${ACCESS_DAYS} dias apos compra/renovacao`);
 });
- 
